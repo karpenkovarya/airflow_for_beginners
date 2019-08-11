@@ -37,7 +37,7 @@ def parse_question(question: dict) -> dict:
 
 
 def call_stack_overflow_api():
-    """ Get first 100 questions created in the last 24 hours sorted by user activity. """
+    """ Get first 100 questions created in the last 24 hours sorted by user votes. """
     stackoverflow_question_url = Variable.get("STACKOVERFLOW_QUESTION_URL")
     today = datetime.now()
     three_days_ago = today - timedelta(days=3)
@@ -46,7 +46,7 @@ def call_stack_overflow_api():
     payload = {
         "fromdate": int(datetime.timestamp(three_days_ago)),
         "todate": int(datetime.timestamp(two_days_ago)),
-        "sort": "activity",
+        "sort": "votes",
         "site": "stackoverflow",
         "order": "desc",
         "tagged": tag,
@@ -105,8 +105,8 @@ with DAG(
         database="stack_overflow",
         dag=dag)
 
-    t2 = PythonOperator(task_id="into_db", python_callable=add_question, dag=dag)
+    t2 = PythonOperator(task_id="insert_questions_into_db", python_callable=add_question, dag=dag)
 
     t3 = BashOperator(task_id="print_date", bash_command="date", dag=dag)
 
-t1 >> t2 >> t3
+t1 >> t2
