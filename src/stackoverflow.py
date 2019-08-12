@@ -76,31 +76,7 @@ def add_question():
         pg_hook = PostgresHook(postgres_conn_id="postgres_so")
         pg_hook.run(insert_question_query, parameters=row)
 
-def add_question_locally():
-    """
-    Add a new question to the database
-    """
-    insert_question_query = ("INSERT INTO public.questions "
-                             "(question_id, title, is_answered, link, "
-                             "owner_reputation, owner_accept_rate, score, "
-                             "tags, creation_date) "
-                             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);")
-
-    conn = psycopg2.connect(user = "postgres",
-                                  password = "4mygdala!",
-                                  host = "127.0.0.1",
-                                  port = "5432",
-                                  database = "stack_overflow")
-    cur = conn.cursor()
-    rows = call_stack_overflow_api()
-    for row in rows:
-        row = tuple(row.values())
-        cur.execute(insert_question_query, row)
-        cur.close()
-        conn.commit()
-        conn.close()
-        break
 
 if __name__ == "__main__":
 
-    add_question_locally()
+    add_question()
