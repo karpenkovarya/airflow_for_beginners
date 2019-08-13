@@ -1,9 +1,10 @@
+import json
 import logging
 
 import requests
 from airflow import DAG
+from airflow.hooks.S3_hook import S3Hook
 from airflow.hooks.postgres_hook import PostgresHook
-from airflow.operators.bash_operator import BashOperator
 from datetime import datetime, timedelta
 
 from airflow.operators.postgres_operator import PostgresOperator
@@ -14,27 +15,6 @@ from airflow.models import Variable
 # TODO: remove this from here and import from src (leave only DAG definitions)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-class ApiError(Exception):
-    def __init__(self, *args):
-        Exception.__init__(self, *args)
-
-
-def parse_question(question: dict) -> dict:
-    """ Returns parsed question from Stack Overflow API """
-    creation_date = datetime.fromtimestamp(question["creation_date"])
-    return {
-        "question_id": question["question_id"],
-        "title": question["title"],
-        "is_answered": question["is_answered"],
-        "link": question["link"],
-        "owner_reputation": question["owner"]["reputation"],
-        "owner_accept_rate": question["owner"].get("accept_rate", 0),
-        "score": question["score"],
-        "tags": question["tags"],
-        "creation_date": creation_date,
-    }
 
 
 def call_stack_overflow_api():
@@ -58,11 +38,24 @@ def call_stack_overflow_api():
     }
     response = requests.get(stackoverflow_question_url, params=payload)
     if response.status_code != 200:
-        raise ApiError(
+        raise Exception(
             f"Cannot fetch questions: {response.status_code} \n {response.json()}"
         )
     for question in response.json().get("items", []):
         yield parse_question(question)
+
+
+def parse_question(question: dict) -> dict:
+    """ Returns parsed question from Stack Overflow API """
+    return {
+        "question_id": question["question_id"],
+        "title": question["title"],
+        "is_answered": question["is_answered"],
+        "link": question["link"],
+        "owner_reputation": question["owner"]["reputation"],
+        "score": question["score"],
+        "tags": question["tags"],
+    }
 
 
 def add_question():
@@ -72,9 +65,9 @@ def add_question():
     insert_question_query = (
         "INSERT INTO public.questions "
         "(question_id, title, is_answered, link, "
-        "owner_reputation, owner_accept_rate, score, "
-        "tags, creation_date) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
+        "owner_reputation, score, "
+        "tags) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s);"
     )
 
     rows = call_stack_overflow_api()
@@ -84,30 +77,43 @@ def add_question():
         pg_hook.run(insert_question_query, parameters=row)
 
 
-def filter_questions():
-    query = "SELECT title, is_answered, link, score, tags, question_id, owner_reputation, owner_accept_rate FROM public.questions limit 2;"
-    pg_hook = PostgresHook(postgres_conn_id="postgres_so").get_conn()
-    src_cursor = pg_hook.cursor("serverCursor")
-    src_cursor.execute(query)
-    rows = src_cursor.fetchall()
-    columns = (
-        "title",
-        "is_answered",
-        "link",
-        "score",
-        "tags",
-        "question_id",
-        "owner_reputation",
-        "owner_accept_rate",
-    )
-    results = []
-    for row in rows:
-        record = dict(zip(columns, record))
-        results.append((row))
+def generate_file_name():
+    now = datetime.now()
+    int_timestamp = int(now.timestamp())
+    return f"{int_timestamp}_top_questions.json"
 
-    print(results)
-    src_cursor.close()
-    pg_hook.close()
+
+def filter_questions():
+    filtering_query = """
+        SELECT title, is_answered, link, tags, question_id
+        FROM public.questions
+        WHERE score >= 1 AND owner_reputation > 1000;
+        """
+    pg_hook = PostgresHook(postgres_conn_id="postgres_so").get_conn()
+
+    with pg_hook.cursor("serverCursor") as src_cursor:
+        src_cursor.execute(filtering_query)
+        rows = src_cursor.fetchall()
+        columns = ("title", "is_answered", "link", "tags", "question_id")
+        results = []
+        for row in rows:
+            record = dict(zip(columns, row))
+            results.append(record)
+
+        return results
+
+
+def write_questions_to_s3():
+    filtered_questions = json.dumps(filter_questions(), indent=2)
+
+    file_name = generate_file_name()
+    json.dumps(filtered_questions, indent=2)
+    hook = S3Hook("s3_connection")
+    hook.load_string(
+        string_data=filtered_questions,
+        key=file_name,
+        bucket_name="stack_overflow_questions",
+    )
 
 
 default_args = {
@@ -136,7 +142,7 @@ with DAG(
         task_id="insert_questions_into_db", python_callable=add_question, dag=dag
     )
     t3 = PythonOperator(
-        task_id="read_questions_from_db", python_callable=filter_questions, dag=dag
+        task_id="filter_questions_to_s3", python_callable=write_questions_to_s3, dag=dag
     )
 
 
