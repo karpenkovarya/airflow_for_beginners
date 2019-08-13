@@ -15,6 +15,7 @@ from airflow.models import Variable
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 class ApiError(Exception):
     def __init__(self, *args):
         Exception.__init__(self, *args)
@@ -51,9 +52,7 @@ def call_stack_overflow_api():
         "order": "desc",
         "tagged": tag,
         "pagesize": 100,
-        "client_id": Variable.get(
-            "STACKOVERFLOW_CLIENT_ID"
-        ),
+        "client_id": Variable.get("STACKOVERFLOW_CLIENT_ID"),
         "client_secret": Variable.get("STACKOVERFLOW_CLIENT_SECRET"),
         "key": Variable.get("STACKOVERFLOW_KEY"),
     }
@@ -70,18 +69,45 @@ def add_question():
     """
     Add a new question to the database
     """
-    insert_question_query = ("INSERT INTO public.questions "
-                             "(question_id, title, is_answered, link, "
-                             "owner_reputation, owner_accept_rate, score, "
-                             "tags, creation_date) "
-                             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);")
+    insert_question_query = (
+        "INSERT INTO public.questions "
+        "(question_id, title, is_answered, link, "
+        "owner_reputation, owner_accept_rate, score, "
+        "tags, creation_date) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
+    )
 
     rows = call_stack_overflow_api()
     for row in rows:
-
         pg_hook = PostgresHook(postgres_conn_id="postgres_so")
         row = tuple(row.values())
         pg_hook.run(insert_question_query, parameters=row)
+
+
+def filter_questions():
+    query = "SELECT title, is_answered, link, score, tags, question_id, owner_reputation, owner_accept_rate FROM public.questions limit 2;"
+    pg_hook = PostgresHook(postgres_conn_id="postgres_so").get_conn()
+    src_cursor = pg_hook.cursor("serverCursor")
+    src_cursor.execute(query)
+    rows = src_cursor.fetchall()
+    columns = (
+        "title",
+        "is_answered",
+        "link",
+        "score",
+        "tags",
+        "question_id",
+        "owner_reputation",
+        "owner_accept_rate",
+    )
+    results = []
+    for row in rows:
+        record = dict(zip(columns, record))
+        results.append((row))
+
+    print(results)
+    src_cursor.close()
+    pg_hook.close()
 
 
 default_args = {
@@ -99,14 +125,19 @@ with DAG(
     "tutorial", default_args=default_args, schedule_interval=timedelta(days=1)
 ) as dag:
     t1 = PostgresOperator(
-        task_id='truncate_questions_table',
+        task_id="truncate_questions_table",
         postgres_conn_id="postgres_so",
         sql="TRUNCATE table public.questions",
         database="stack_overflow",
-        dag=dag)
+        dag=dag,
+    )
 
-    t2 = PythonOperator(task_id="insert_questions_into_db", python_callable=add_question, dag=dag)
+    t2 = PythonOperator(
+        task_id="insert_questions_into_db", python_callable=add_question, dag=dag
+    )
+    t3 = PythonOperator(
+        task_id="read_questions_from_db", python_callable=filter_questions, dag=dag
+    )
 
-    t3 = BashOperator(task_id="print_date", bash_command="date", dag=dag)
 
-t1 >> t2
+t1 >> t2 >> t3
