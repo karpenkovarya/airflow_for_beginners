@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 from datetime import datetime, timedelta
 
@@ -14,8 +13,6 @@ from airflow.utils.email import send_email
 from jinja2 import Environment, FileSystemLoader
 
 # TODO: remove this from here and import from src (leave only DAG definitions)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def call_stack_overflow_api():
