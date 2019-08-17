@@ -1,20 +1,18 @@
 import json
-import logging
+import os
+from datetime import datetime, timedelta
 
 import requests
 from airflow import DAG
-from airflow.hooks.S3_hook import S3Hook
 from airflow.hooks.postgres_hook import PostgresHook
-from datetime import datetime, timedelta
-
+from airflow.hooks.S3_hook import S3Hook
+from airflow.models import Variable
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
-
-from airflow.models import Variable
+from airflow.utils.email import send_email
+from jinja2 import Environment, FileSystemLoader
 
 # TODO: remove this from here and import from src (leave only DAG definitions)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def call_stack_overflow_api():
@@ -118,11 +116,24 @@ def write_questions_to_s3(**context):
     task_instance.xcom_push(key="file_name", value=file_name)
 
 
-def read_json_from_s3(**context):
+def render_template_and_send_email(**context):
+
     value = context["task_instance"].xcom_pull(
         task_ids="write_questions_to_s3", key="file_name"
     )
-    print(value)
+    hook = S3Hook("s3_connection")
+    file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
+    questions = json.loads(file_content)
+
+    root = os.path.dirname(os.path.abspath(__file__))
+    env = Environment(loader=FileSystemLoader(root))
+    template = env.get_template("email_template.html")
+
+    html_content = template.render(questions=questions)
+    subject = f"Top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}"
+    send_email(
+        to="karpenko.varya@gmail.com", subject=subject, html_content=html_content
+    )
 
 
 default_args = {
@@ -132,7 +143,7 @@ default_args = {
     "email": ["airflow@varya.io"],
     "email_on_failure": True,
     "email_on_retry": False,
-    "retries": 0,
+    "retries": 1,
     "retry_delay": timedelta(minutes=1),
 }
 
@@ -142,7 +153,7 @@ with DAG(
     t1 = PostgresOperator(
         task_id="truncate_questions_table",
         postgres_conn_id="postgres_so",
-        sql="TRUNCATE table public.questions",
+        sql="TRUNCATE TABLE public.questions",
         database="stack_overflow",
         dag=dag,
     )
@@ -157,11 +168,10 @@ with DAG(
         provide_context=True,
     )
     t4 = PythonOperator(
-        task_id="read_json_from_s3",
-        python_callable=read_json_from_s3,
+        task_id="render_template_and_send_email",
+        python_callable=render_template_and_send_email,
         dag=dag,
         provide_context=True,
     )
-
 
 t1 >> t2 >> t3 >> t4
