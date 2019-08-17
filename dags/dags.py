@@ -1,20 +1,17 @@
 import json
 import logging
+import os
+from datetime import datetime, timedelta
 
 import requests
 from airflow import DAG
-from airflow.hooks.S3_hook import S3Hook
 from airflow.hooks.postgres_hook import PostgresHook
-from datetime import datetime, timedelta
-
-from airflow.utils.email import send_email
-from jinja2 import Environment, FileSystemLoader
-import os
-from airflow.operators.email_operator import EmailOperator
+from airflow.hooks.S3_hook import S3Hook
+from airflow.models import Variable
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
-
-from airflow.models import Variable
+from airflow.utils.email import send_email
+from jinja2 import Environment, FileSystemLoader
 
 # TODO: remove this from here and import from src (leave only DAG definitions)
 logger = logging.getLogger(__name__)
