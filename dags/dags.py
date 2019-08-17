@@ -123,6 +123,7 @@ def write_questions_to_s3(**context):
 
 
 def render_template_and_send_email(**context):
+
     value = context["task_instance"].xcom_pull(
         task_ids="write_questions_to_s3", key="file_name"
     )
@@ -134,16 +135,10 @@ def render_template_and_send_email(**context):
     env = Environment(loader=FileSystemLoader(root))
     template = env.get_template("email_template.html")
 
-    html_content = template.render(
-        questions_number=len(questions),
-        tag="pandas",
-        date=datetime.today().date(),
-        questions=questions,
-    )
+    html_content = template.render(questions=questions)
+    subject = f"Top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}"
     send_email(
-        to="karpenko.varya@gmail.com",
-        subject="SO Top Questions",
-        html_content=html_content,
+        to="karpenko.varya@gmail.com", subject=subject, html_content=html_content
     )
 
 
