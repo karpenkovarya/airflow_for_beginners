@@ -7,6 +7,7 @@ from airflow.hooks.S3_hook import S3Hook
 from airflow.hooks.postgres_hook import PostgresHook
 from datetime import datetime, timedelta
 
+from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
 
@@ -15,7 +16,6 @@ from airflow.models import Variable
 # TODO: remove this from here and import from src (leave only DAG definitions)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
 
 def call_stack_overflow_api():
     """ Get first 100 questions created in the last 24 hours sorted by user votes. """
@@ -124,7 +124,13 @@ def read_json_from_s3(**context):
     )
     hook = S3Hook("s3_connection")
     file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
-    print(file_content)
+    questions = json.loads(file_content)
+    template_header = f"The top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}\n\n"
+    template_body = ""
+    for q_number, question in enumerate(questions, start=1):
+        template_body += f"{q_number}. {question['title'].capitalize()} \ntagged: {', '.join(question['tags'])} \n{question['link']} \n\n"
+
+    return template_header + template_body
 
 
 default_args = {
@@ -144,7 +150,7 @@ with DAG(
     t1 = PostgresOperator(
         task_id="truncate_questions_table",
         postgres_conn_id="postgres_so",
-        sql="TRUNCATE table public.questions",
+        sql="TRUNCATE TABLE public.questions",
         database="stack_overflow",
         dag=dag,
     )
@@ -164,6 +170,12 @@ with DAG(
         dag=dag,
         provide_context=True,
     )
+    t5 = EmailOperator(
+        task_id='send_email',
+        to='karpenko.varya@gmail.com',
+        subject='Airflow Alert',
+        html_content=""" <h3>Email Test</h3> """,
+        dag=dag
+    )
 
-
-t1 >> t2 >> t3 >> t4
+t1 >> t2 >> t3 >> t4 >> t5
