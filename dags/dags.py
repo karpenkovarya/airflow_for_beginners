@@ -122,7 +122,9 @@ def read_json_from_s3(**context):
     value = context["task_instance"].xcom_pull(
         task_ids="write_questions_to_s3", key="file_name"
     )
-    print(value)
+    hook = S3Hook("s3_connection")
+    file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
+    print(file_content)
 
 
 default_args = {
