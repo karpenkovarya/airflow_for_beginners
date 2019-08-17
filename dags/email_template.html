@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<h3>The top {{questions_number}} questions under the tag {{tag}} on {{date}}</h3>
+
+<ul>
+{% for question in questions %}
+   <li>
+       <a href="{{question['link']}}">{{question['title'].capitalize()}}</a> tagged: <strong>{{', '.join(question['tags'])}}</strong>
+   </li>
+{% endfor %}
+</ul>
+</body>
+</html>

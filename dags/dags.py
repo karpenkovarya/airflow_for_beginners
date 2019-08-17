@@ -7,6 +7,9 @@ from airflow.hooks.S3_hook import S3Hook
 from airflow.hooks.postgres_hook import PostgresHook
 from datetime import datetime, timedelta
 
+from airflow.utils.email import send_email
+from jinja2 import Environment, FileSystemLoader
+import os
 from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
@@ -16,6 +19,7 @@ from airflow.models import Variable
 # TODO: remove this from here and import from src (leave only DAG definitions)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 def call_stack_overflow_api():
     """ Get first 100 questions created in the last 24 hours sorted by user votes. """
@@ -118,19 +122,29 @@ def write_questions_to_s3(**context):
     task_instance.xcom_push(key="file_name", value=file_name)
 
 
-def read_json_from_s3(**context):
+def render_template_and_send_email(**context):
     value = context["task_instance"].xcom_pull(
         task_ids="write_questions_to_s3", key="file_name"
     )
     hook = S3Hook("s3_connection")
     file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
     questions = json.loads(file_content)
-    template_header = f"The top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}\n\n"
-    template_body = ""
-    for q_number, question in enumerate(questions, start=1):
-        template_body += f"{q_number}. {question['title'].capitalize()} \ntagged: {', '.join(question['tags'])} \n{question['link']} \n\n"
 
-    return template_header + template_body
+    root = os.path.dirname(os.path.abspath(__file__))
+    env = Environment(loader=FileSystemLoader(root))
+    template = env.get_template("email_template.html")
+
+    html_content = template.render(
+        questions_number=len(questions),
+        tag="pandas",
+        date=datetime.today().date(),
+        questions=questions,
+    )
+    send_email(
+        to="karpenko.varya@gmail.com",
+        subject="SO Top Questions",
+        html_content=html_content,
+    )
 
 
 default_args = {
@@ -140,7 +154,7 @@ default_args = {
     "email": ["airflow@varya.io"],
     "email_on_failure": True,
     "email_on_retry": False,
-    "retries": 0,
+    "retries": 1,
     "retry_delay": timedelta(minutes=1),
 }
 
@@ -165,17 +179,10 @@ with DAG(
         provide_context=True,
     )
     t4 = PythonOperator(
-        task_id="read_json_from_s3",
-        python_callable=read_json_from_s3,
+        task_id="render_template_and_send_email",
+        python_callable=render_template_and_send_email,
         dag=dag,
         provide_context=True,
     )
-    t5 = EmailOperator(
-        task_id='send_email',
-        to='karpenko.varya@gmail.com',
-        subject='Airflow Alert',
-        html_content=""" <h3>Email Test</h3> """,
-        dag=dag
-    )
 
-t1 >> t2 >> t3 >> t4 >> t5
+t1 >> t2 >> t3 >> t4

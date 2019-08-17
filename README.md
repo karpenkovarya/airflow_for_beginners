@@ -28,3 +28,5 @@ export AIRFLOW_HOME=`pwd`
 ```
 
 stackexchange_question_url: "https://api.stackexchange.com/2.2/questions"
+
+setup emil smtp server http://manojvsj.blogspot.com/2016/09/how-smtp-works-and-how-to-configure.html

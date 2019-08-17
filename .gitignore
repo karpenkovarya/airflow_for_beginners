@@ -108,4 +108,3 @@ venv.bak/
 *.db
 *.cfg
 logs/
-/airflow.cfg
