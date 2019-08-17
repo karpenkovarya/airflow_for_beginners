@@ -103,7 +103,7 @@ def filter_questions():
         return results
 
 
-def write_questions_to_s3():
+def write_questions_to_s3(**context):
     filtered_questions = json.dumps(filter_questions(), indent=2)
 
     file_name = generate_file_name()
@@ -112,8 +112,17 @@ def write_questions_to_s3():
     hook.load_string(
         string_data=filtered_questions,
         key=file_name,
-        bucket_name="stack_overflow_questions",
+        bucket_name="stack.overflow.questions",
     )
+    task_instance = context["task_instance"]
+    task_instance.xcom_push(key="file_name", value=file_name)
+
+
+def read_json_from_s3(**context):
+    value = context["task_instance"].xcom_pull(
+        task_ids="write_questions_to_s3", key="file_name"
+    )
+    print(value)
 
 
 default_args = {
@@ -142,8 +151,17 @@ with DAG(
         task_id="insert_questions_into_db", python_callable=add_question, dag=dag
     )
     t3 = PythonOperator(
-        task_id="filter_questions_to_s3", python_callable=write_questions_to_s3, dag=dag
+        task_id="write_questions_to_s3",
+        python_callable=write_questions_to_s3,
+        dag=dag,
+        provide_context=True,
+    )
+    t4 = PythonOperator(
+        task_id="read_json_from_s3",
+        python_callable=read_json_from_s3,
+        dag=dag,
+        provide_context=True,
     )
 
 
-t1 >> t2 >> t3
+t1 >> t2 >> t3 >> t4
