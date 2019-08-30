@@ -1,154 +1,27 @@
-import json
-import os
+
 from datetime import datetime, timedelta
 
-import requests
 from airflow import DAG
-from airflow.hooks.postgres_hook import PostgresHook
-from airflow.hooks.S3_hook import S3Hook
-from airflow.models import Variable
+from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
-from airflow.utils.email import send_email
-from jinja2 import Environment, FileSystemLoader
 
-# TODO: remove this from here and import from src (leave only DAG definitions)
-
-
-def call_stack_overflow_api():
-    """ Get first 100 questions created in the last 24 hours sorted by user votes. """
-    stackoverflow_question_url = Variable.get("STACKOVERFLOW_QUESTION_URL")
-    today = datetime.now()
-    three_days_ago = today - timedelta(days=3)
-    two_days_ago = today - timedelta(days=2)
-    tag = "pandas"
-    payload = {
-        "fromdate": int(datetime.timestamp(three_days_ago)),
-        "todate": int(datetime.timestamp(two_days_ago)),
-        "sort": "votes",
-        "site": "stackoverflow",
-        "order": "desc",
-        "tagged": tag,
-        "pagesize": 100,
-        "client_id": Variable.get("STACKOVERFLOW_CLIENT_ID"),
-        "client_secret": Variable.get("STACKOVERFLOW_CLIENT_SECRET"),
-        "key": Variable.get("STACKOVERFLOW_KEY"),
-    }
-    response = requests.get(stackoverflow_question_url, params=payload)
-    if response.status_code != 200:
-        raise Exception(
-            f"Cannot fetch questions: {response.status_code} \n {response.json()}"
-        )
-    for question in response.json().get("items", []):
-        yield parse_question(question)
-
-
-def parse_question(question: dict) -> dict:
-    """ Returns parsed question from Stack Overflow API """
-    return {
-        "question_id": question["question_id"],
-        "title": question["title"],
-        "is_answered": question["is_answered"],
-        "link": question["link"],
-        "owner_reputation": question["owner"]["reputation"],
-        "score": question["score"],
-        "tags": question["tags"],
-    }
-
-
-def add_question():
-    """
-    Add a new question to the database
-    """
-    insert_question_query = (
-        "INSERT INTO public.questions "
-        "(question_id, title, is_answered, link, "
-        "owner_reputation, score, "
-        "tags) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s);"
-    )
-
-    rows = call_stack_overflow_api()
-    for row in rows:
-        pg_hook = PostgresHook(postgres_conn_id="postgres_so")
-        row = tuple(row.values())
-        pg_hook.run(insert_question_query, parameters=row)
-
-
-def generate_file_name():
-    now = datetime.now()
-    int_timestamp = int(now.timestamp())
-    return f"{int_timestamp}_top_questions.json"
-
-
-def filter_questions():
-    filtering_query = """
-        SELECT title, is_answered, link, tags, question_id
-        FROM public.questions
-        WHERE score >= 1 AND owner_reputation > 1000;
-        """
-    pg_hook = PostgresHook(postgres_conn_id="postgres_so").get_conn()
-
-    with pg_hook.cursor("serverCursor") as src_cursor:
-        src_cursor.execute(filtering_query)
-        rows = src_cursor.fetchall()
-        columns = ("title", "is_answered", "link", "tags", "question_id")
-        results = []
-        for row in rows:
-            record = dict(zip(columns, row))
-            results.append(record)
-
-        return results
-
-
-def write_questions_to_s3(**context):
-    filtered_questions = json.dumps(filter_questions(), indent=2)
-
-    file_name = generate_file_name()
-    json.dumps(filtered_questions, indent=2)
-    hook = S3Hook("s3_connection")
-    hook.load_string(
-        string_data=filtered_questions,
-        key=file_name,
-        bucket_name="stack.overflow.questions",
-    )
-    task_instance = context["task_instance"]
-    task_instance.xcom_push(key="file_name", value=file_name)
-
-
-def render_template_and_send_email(**context):
-
-    value = context["task_instance"].xcom_pull(
-        task_ids="write_questions_to_s3", key="file_name"
-    )
-    hook = S3Hook("s3_connection")
-    file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
-    questions = json.loads(file_content)
-
-    root = os.path.dirname(os.path.abspath(__file__))
-    env = Environment(loader=FileSystemLoader(root))
-    template = env.get_template("email_template.html")
-
-    html_content = template.render(questions=questions)
-    subject = f"Top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}"
-    send_email(
-        to="karpenko.varya@gmail.com", subject=subject, html_content=html_content
-    )
+from utils import write_questions_to_s3, add_question, render_template_and_send_email
 
 
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "start_date": datetime(2019, 6, 1),
-    "email": ["airflow@varya.io"],
-    "email_on_failure": True,
+    "start_date": datetime(2019, 8, 30),
+    "email": ["karpenko.varya@gmail.com"],
+    "email_on_failure": False,
     "email_on_retry": False,
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=1),
 }
 
 with DAG(
-    "tutorial", default_args=default_args, schedule_interval=timedelta(days=1)
+    "pandas_questions", default_args=default_args, schedule_interval=timedelta(days=1)
 ) as dag:
     t1 = PostgresOperator(
         task_id="truncate_questions_table",
@@ -168,10 +41,19 @@ with DAG(
         provide_context=True,
     )
     t4 = PythonOperator(
-        task_id="render_template_and_send_email",
+        task_id="render_template",
         python_callable=render_template_and_send_email,
         dag=dag,
         provide_context=True,
     )
 
-t1 >> t2 >> t3 >> t4
+    t5 = EmailOperator(
+        task_id="send_email",
+        provide_context=True,
+        dag=dag,
+        to="karpenko.varya@gmail.com",
+        subject = f"Top questions with tag 'pandas' on {{ds}}",
+        html_content = "{{ task_instance.xcom_pull(task_ids='render_template', key='html_content') }}"
+    )
+
+t1 >> t2 >> t3 >> t4 >> t5
