@@ -1,4 +1,3 @@
-
 import json
 import os
 from datetime import datetime, timedelta
@@ -7,40 +6,42 @@ import requests
 from airflow.hooks.postgres_hook import PostgresHook
 from airflow.hooks.S3_hook import S3Hook
 from airflow.models import Variable
-from airflow.utils.email import send_email
 from jinja2 import Environment, FileSystemLoader
+
+S3_FILE_NAME = f"{datetime.today().date()}_top_questions.json"
 
 
 def call_stack_overflow_api():
-    """ Get first 100 questions created in the last 24 hours sorted by user votes. """
-    stackoverflow_question_url = Variable.get("STACKOVERFLOW_QUESTION_URL")
+    """ Get first 100 questions created two days ago sorted by user votes """
+
+    stack_overflow_question_url = Variable.get("STACK_OVERFLOW_QUESTION_URL")
+
     today = datetime.now()
     three_days_ago = today - timedelta(days=3)
     two_days_ago = today - timedelta(days=2)
-    tag = "pandas"
+
     payload = {
         "fromdate": int(datetime.timestamp(three_days_ago)),
         "todate": int(datetime.timestamp(two_days_ago)),
         "sort": "votes",
         "site": "stackoverflow",
         "order": "desc",
-        "tagged": tag,
+        "tagged": Variable.get("TAG"),
         "pagesize": 100,
-        "client_id": Variable.get("STACKOVERFLOW_CLIENT_ID"),
-        "client_secret": Variable.get("STACKOVERFLOW_CLIENT_SECRET"),
-        "key": Variable.get("STACKOVERFLOW_KEY"),
+        "client_id": Variable.get("STACK_OVERFLOW_CLIENT_ID"),
+        "client_secret": Variable.get("STACK_OVERFLOW_CLIENT_SECRET"),
+        "key": Variable.get("STACK_OVERFLOW_KEY"),
     }
-    response = requests.get(stackoverflow_question_url, params=payload)
-    if response.status_code != 200:
-        raise Exception(
-            f"Cannot fetch questions: {response.status_code} \n {response.json()}"
-        )
+
+    response = requests.get(stack_overflow_question_url, params=payload)
+
     for question in response.json().get("items", []):
         yield parse_question(question)
 
 
 def parse_question(question: dict) -> dict:
     """ Returns parsed question from Stack Overflow API """
+
     return {
         "question_id": question["question_id"],
         "title": question["title"],
@@ -52,17 +53,20 @@ def parse_question(question: dict) -> dict:
     }
 
 
-def add_question():
-    """
-    Add a new question to the database
-    """
-    insert_question_query = (
-        "INSERT INTO public.questions "
-        "(question_id, title, is_answered, link, "
-        "owner_reputation, score, "
-        "tags) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s);"
-    )
+def insert_question():
+    """ Inserts a new question to the database """
+
+    insert_question_query = """
+        INSERT INTO public.questions (
+            question_id,
+            title,
+            is_answered,
+            link,
+            owner_reputation, 
+            score, 
+            tags)
+        VALUES (%s, %s, %s, %s, %s, %s, %s); 
+        """
 
     rows = call_stack_overflow_api()
     for row in rows:
@@ -71,13 +75,9 @@ def add_question():
         pg_hook.run(insert_question_query, parameters=row)
 
 
-def generate_file_name():
-    now = datetime.now()
-    int_timestamp = int(now.timestamp())
-    return f"{int_timestamp}_top_questions.json"
-
-
 def filter_questions():
+    """ Read all questions from the database and filter them """
+
     filtering_query = """
         SELECT title, is_answered, link, tags, question_id
         FROM public.questions
@@ -94,41 +94,34 @@ def filter_questions():
             record = dict(zip(columns, row))
             results.append(record)
 
-        return results
+        return json.dumps(results, indent=2)
 
 
-def write_questions_to_s3(**context):
-    filtered_questions = json.dumps(filter_questions(), indent=2)
-
-    file_name = generate_file_name()
-    json.dumps(filtered_questions, indent=2)
+def write_questions_to_s3():
     hook = S3Hook("s3_connection")
     hook.load_string(
-        string_data=filtered_questions,
-        key=file_name,
+        string_data=filter_questions(),
+        key=S3_FILE_NAME,
         bucket_name="stack.overflow.questions",
+        replace=True,
     )
-    task_instance = context["task_instance"]
-    task_instance.xcom_push(key="file_name", value=file_name)
 
 
-def render_template_and_send_email(**context):
+def render_template(**context):
+    """ Render HTML template using questions metadata from S3 bucket """
 
-    value = context["task_instance"].xcom_pull(
-        task_ids="write_questions_to_s3", key="file_name"
-    )
     hook = S3Hook("s3_connection")
-    file_content = hook.read_key(key=value, bucket_name="stack.overflow.questions")
+    file_content = hook.read_key(
+        key=S3_FILE_NAME, bucket_name="stack.overflow.questions"
+    )
     questions = json.loads(file_content)
 
     root = os.path.dirname(os.path.abspath(__file__))
     env = Environment(loader=FileSystemLoader(root))
     template = env.get_template("email_template.html")
-
     html_content = template.render(questions=questions)
+
+    # Push rendered HTML as a string to the Airflow metadata database
+    # to make it available for the next task
     task_instance = context["task_instance"]
     task_instance.xcom_push(key="html_content", value=html_content)
-    # subject = f"Top {len(questions)} questions under the tag 'pandas' on {datetime.today().date()}"
-    # send_email(
-    #     to="karpenko.varya@gmail.com", subject=subject, html_content=html_content
-    # )

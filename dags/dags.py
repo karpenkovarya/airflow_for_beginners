@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta
 
 from airflow import DAG
@@ -6,7 +5,7 @@ from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
 
-from utils import write_questions_to_s3, add_question, render_template_and_send_email
+from utils import write_questions_to_s3, insert_question, render_template
 
 
 default_args = {
@@ -32,7 +31,7 @@ with DAG(
     )
 
     t2 = PythonOperator(
-        task_id="insert_questions_into_db", python_callable=add_question, dag=dag
+        task_id="insert_questions_into_db", python_callable=insert_question, dag=dag
     )
     t3 = PythonOperator(
         task_id="write_questions_to_s3",
@@ -42,7 +41,7 @@ with DAG(
     )
     t4 = PythonOperator(
         task_id="render_template",
-        python_callable=render_template_and_send_email,
+        python_callable=render_template,
         dag=dag,
         provide_context=True,
     )
@@ -52,8 +51,8 @@ with DAG(
         provide_context=True,
         dag=dag,
         to="karpenko.varya@gmail.com",
-        subject = f"Top questions with tag 'pandas' on {{ds}}",
-        html_content = "{{ task_instance.xcom_pull(task_ids='render_template', key='html_content') }}"
+        subject=f"Top questions with tag 'pandas' on {{ds}}",
+        html_content="{{ task_instance.xcom_pull(task_ids='render_template', key='html_content') }}",
     )
 
 t1 >> t2 >> t3 >> t4 >> t5
