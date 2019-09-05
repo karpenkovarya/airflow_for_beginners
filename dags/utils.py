@@ -10,7 +10,6 @@ from jinja2 import Environment, FileSystemLoader
 
 S3_FILE_NAME = f"{datetime.today().date()}_top_questions.json"
 
-
 def call_stack_overflow_api():
     """ Get first 100 questions created two days ago sorted by user votes """
 
@@ -27,7 +26,6 @@ def call_stack_overflow_api():
         "site": "stackoverflow",
         "order": "desc",
         "tagged": Variable.get("TAG"),
-        "pagesize": 100,
         "client_id": Variable.get("STACK_OVERFLOW_CLIENT_ID"),
         "client_secret": Variable.get("STACK_OVERFLOW_CLIENT_SECRET"),
         "key": Variable.get("STACK_OVERFLOW_KEY"),
@@ -89,11 +87,7 @@ def filter_questions():
         src_cursor.execute(filtering_query)
         rows = src_cursor.fetchall()
         columns = ("title", "is_answered", "link", "tags", "question_id")
-        results = []
-        for row in rows:
-            record = dict(zip(columns, row))
-            results.append(record)
-
+        results = [dict(zip(columns, row)) for row in rows]
         return json.dumps(results, indent=2)
 
 
@@ -110,7 +104,7 @@ def write_questions_to_s3():
 def render_template(**context):
     """ Render HTML template using questions metadata from S3 bucket """
 
-    hook = S3Hook("s3_connection")
+    hook = S3Hook(aws_conn_id="s3_connection")
     file_content = hook.read_key(
         key=S3_FILE_NAME, bucket_name="stack.overflow.questions"
     )
