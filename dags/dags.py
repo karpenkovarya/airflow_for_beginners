@@ -5,13 +5,13 @@ from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
 
-from utils import write_questions_to_s3, insert_question, render_template
+from dags.utils import insert_question, write_questions_to_s3, render_template
 
 
 default_args = {
     "owner": "varya",
     "depends_on_past": False,
-    "start_date": datetime(2019, 8, 30),
+    "start_date": datetime(2019, 10, 9),
     "email": ["karpenko.varya@gmail.com"],
     "email_on_failure": False,
     "email_on_retry": False,
@@ -23,12 +23,13 @@ with DAG(
     "stack_overflow_questions", default_args=default_args, schedule_interval="@daily"
 ) as dag:
 
-    t1 = PostgresOperator(
-        task_id="create_questions_table",
-        postgres_conn_id="postgres_so",
+    Task_I = PostgresOperator(
+        dag=dag,
+        task_id="create_table",
+        postgres_conn_id="postgres_connection",
+        database="stack_overflow",
         sql="""
         DROP TABLE IF EXISYS public.questions;
-
         CREATE TABLE public.questions
         (
             title text,
@@ -40,32 +41,31 @@ with DAG(
             owner_reputation integer
         )
         """,
-        database="stack_overflow",
-        dag=dag,
     )
 
-    t2 = PythonOperator(
-        task_id="insert_questions", python_callable=insert_question, dag=dag
+    Task_II = PythonOperator(
+        dag=dag, task_id="insert_questions", python_callable=insert_question
     )
-    t3 = PythonOperator(
-        task_id="write_questions_to_s3",
-        python_callable=write_questions_to_s3,
+
+    Task_III = PythonOperator(
+        dag=dag, task_id="write_questions_to_s3", python_callable=write_questions_to_s3
+    )
+
+    Task_IV = PythonOperator(
         dag=dag,
-    )
-    t4 = PythonOperator(
         task_id="render_template",
         python_callable=render_template,
-        dag=dag,
         provide_context=True,
     )
 
-    t5 = EmailOperator(
+    Task_V = EmailOperator(
+        dag=dag,
         task_id="send_email",
         provide_context=True,
-        dag=dag,
-        to="karpenko.varya@gmail.com",
-        subject=f"Top questions with tag 'pandas' on {{ ds }}",
-        html_content="{{ task_instance.xcom_pull(task_ids='render_template', key='html_content') }}",
+        to="hello@varya.io",
+        subject="Top questions with tag 'pandas' on {{ ds }}",
+        html_content="{{ task_instance.xcom_pull(task_id='render_template', key='html_content') }}"
     )
 
-t1 >> t2 >> t3 >> t4 >> t5
+Task_I >> Task_II >> Task_III >> Task_IV >> Task_V 
+
