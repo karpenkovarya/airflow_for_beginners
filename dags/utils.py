@@ -3,12 +3,11 @@ import os
 from datetime import datetime, timedelta
 
 import requests
-from airflow.hooks.postgres_hook import PostgresHook
-from airflow.hooks.S3_hook import S3Hook
 from airflow.models import Variable
 from jinja2 import Environment, FileSystemLoader
 
 S3_FILE_NAME = f"{datetime.today().date()}_top_questions.json"
+
 
 def call_stack_overflow_api():
     """ Get first 100 questions created two days ago sorted by user votes """
@@ -28,27 +27,21 @@ def call_stack_overflow_api():
         "tagged": Variable.get("TAG"),
         "client_id": Variable.get("STACK_OVERFLOW_CLIENT_ID"),
         "client_secret": Variable.get("STACK_OVERFLOW_CLIENT_SECRET"),
-        "key": Variable.get("STACK_OVERFLOW_KEY"),
+        "key": Variable.get("STCK_OVERFLOW_KEY"),
     }
 
     response = requests.get(stack_overflow_question_url, params=payload)
 
     for question in response.json().get("items", []):
-        yield parse_question(question)
-
-
-def parse_question(question: dict) -> dict:
-    """ Returns parsed question from Stack Overflow API """
-
-    return {
-        "question_id": question["question_id"],
-        "title": question["title"],
-        "is_answered": question["is_answered"],
-        "link": question["link"],
-        "owner_reputation": question["owner"].get("reputation", 0),
-        "score": question["score"],
-        "tags": question["tags"],
-    }
+        yield {
+            "question_id": question["question_id"],
+            "title": question["title"],
+            "is_answered": question["is_answered"],
+            "link": question["link"],
+            "owner_reputation": question["owner"].get("reputation", 0),
+            "score": question["score"],
+            "tags": question["tags"],
+        }
 
 
 def insert_question():
