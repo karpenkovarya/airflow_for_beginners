@@ -5,13 +5,13 @@ from airflow.operators.email_operator import EmailOperator
 from airflow.operators.postgres_operator import PostgresOperator
 from airflow.operators.python_operator import PythonOperator
 
-from dags.utils import insert_question, write_questions_to_s3, render_template
+from utils import insert_question, write_questions_to_s3, render_template
 
 
 default_args = {
     "owner": "varya",
     "depends_on_past": False,
-    "start_date": datetime(2019, 10, 9),
+    "start_date": datetime(2019, 1, 9),
     "email": ["karpenko.varya@gmail.com"],
     "email_on_failure": False,
     "email_on_retry": False,
