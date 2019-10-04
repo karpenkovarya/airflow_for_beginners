@@ -18,8 +18,8 @@ def call_stack_overflow_api() -> dict:
     stack_overflow_question_url = Variable.get("STACK_OVERFLOW_QUESTION_URL")
 
     today = datetime.now()
-    three_days_ago = today - timedelta(days=3)
-    two_days_ago = today - timedelta(days=2)
+    three_days_ago = today - timedelta(days=7)
+    two_days_ago = today - timedelta(days=5)
 
     payload = {
         "fromdate": int(datetime.timestamp(three_days_ago)),
@@ -30,7 +30,7 @@ def call_stack_overflow_api() -> dict:
         "tagged": Variable.get("TAG"),
         "client_id": Variable.get("STACK_OVERFLOW_CLIENT_ID"),
         "client_secret": Variable.get("STACK_OVERFLOW_CLIENT_SECRET"),
-        "key": Variable.get("STCK_OVERFLOW_KEY"),
+        "key": Variable.get("STACK_OVERFLOW_KEY"),
     }
 
     response = requests.get(stack_overflow_question_url, params=payload)
@@ -47,7 +47,7 @@ def call_stack_overflow_api() -> dict:
         }
 
 
-def insert_question():
+def insert_question_to_db():
     """ Inserts a new question to the database """
 
     insert_question_query = """
@@ -128,5 +128,5 @@ def render_template(**context):
     # to make it available for the next task
 
     task_instance = context["task_instance"]
-    task_instance.xcom_push(key="html_context", value=html_content)
+    task_instance.xcom_push(key="html_content", value=html_content)
 

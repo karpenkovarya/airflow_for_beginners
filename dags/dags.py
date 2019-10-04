@@ -7,29 +7,28 @@ from airflow.operators.python_operator import PythonOperator
 
 from utils import insert_question, write_questions_to_s3, render_template
 
+from dags.utils import insert_question_to_db
 
 default_args = {
     "owner": "varya",
     "depends_on_past": False,
     "start_date": datetime(2019, 1, 9),
-    "email": ["karpenko.varya@gmail.com"],
+    "email": ["my_email@mail.com"],
     "email_on_failure": False,
     "email_on_retry": False,
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=1),
+    "schedule_interval": "@daily",
 }
 
-with DAG(
-    "stack_overflow_questions", default_args=default_args, schedule_interval="@daily"
-) as dag:
+with DAG("stack_overflow_questions", default_args=default_args) as dag:
 
     Task_I = PostgresOperator(
-        dag=dag,
         task_id="create_table",
         postgres_conn_id="postgres_connection",
         database="stack_overflow",
         sql="""
-        DROP TABLE IF EXISYS public.questions;
+        DROP TABLE IF EXISTS public.questions;
         CREATE TABLE public.questions
         (
             title text,
@@ -44,28 +43,26 @@ with DAG(
     )
 
     Task_II = PythonOperator(
-        dag=dag, task_id="insert_questions", python_callable=insert_question
+        task_id="insert_question_to_db", python_callable=insert_question_to_db
     )
 
     Task_III = PythonOperator(
-        dag=dag, task_id="write_questions_to_s3", python_callable=write_questions_to_s3
+        task_id="write_questions_to_s3", python_callable=write_questions_to_s3
     )
 
     Task_IV = PythonOperator(
-        dag=dag,
         task_id="render_template",
         python_callable=render_template,
         provide_context=True,
     )
 
     Task_V = EmailOperator(
-        dag=dag,
         task_id="send_email",
         provide_context=True,
-        to="hello@varya.io",
+        to="my_email@mail.com",
         subject="Top questions with tag 'pandas' on {{ ds }}",
-        html_content="{{ task_instance.xcom_pull(task_id='render_template', key='html_content') }}"
+        html_content="{{ task_instance.xcom_pull(task_ids='render_template', key='html_content') }}",
     )
 
-Task_I >> Task_II >> Task_III >> Task_IV >> Task_V 
+Task_I >> Task_II >> Task_III >> Task_IV >> Task_V
 
