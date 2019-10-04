@@ -35,6 +35,8 @@ Happy learning 🤓
 
 📰 [ETL best principles](https://gtoonstra.github.io/etl-with-airflow/principles.html)
 
+📰 [Managing Dependencies in Apache Airflow](https://www.astronomer.io/guides/managing-dependencies/)
+
 📝 [Getting Started with Airflow Using Docker](http://www.marknagelberg.com/getting-started-with-airflow-using-docker/)
 
 🎧 [Putting Airflow Into Production](https://overcast.fm/+H1YNx1QJE)
