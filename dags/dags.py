@@ -10,9 +10,9 @@ from utils import insert_question, write_questions_to_s3, render_template
 from dags.utils import insert_question_to_db
 
 default_args = {
-    "owner": "varya",
+    "owner": "me",
     "depends_on_past": False,
-    "start_date": datetime(2019, 1, 9),
+    "start_date": datetime(2019, 10, 9),
     "email": ["my_email@mail.com"],
     "email_on_failure": False,
     "email_on_retry": False,
