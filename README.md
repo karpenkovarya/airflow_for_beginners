@@ -16,7 +16,7 @@ By writing this workflow we will learn the main concepts of Apache Airflow, such
 
 Happy learning 🤓
 
-###Helpful resources
+### Helpful resources
 
 📝 [Apache Airflow Documentation](https://airflow.apache.org/)
 
