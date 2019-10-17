@@ -1,5 +1,7 @@
 This is a small example of the workflow built with Apache Airflow.
 
+You can find slides [here](https://www.slideshare.net/varyakarpenko5/airflow-for-beginners)
+
 The goal is to set up a data pipline to get a fresh portion of Stack Overflow questions with tag `pandas` to our mailbox daily.
 
 A small python script could do the job, but for the learning purposes we choose to overengineer it.
