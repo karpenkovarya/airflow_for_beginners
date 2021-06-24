@@ -13,17 +13,17 @@ S3_FILE_NAME = f"{datetime.today().date()}_top_questions.json"
 
 
 def call_stack_overflow_api() -> dict:
-    """ Get first 100 questions created two days ago sorted by user votes """
+    """ Get first 100 questions created between 5-7 days ago sorted by user votes """
 
     stack_overflow_question_url = Variable.get("STACK_OVERFLOW_QUESTION_URL")
 
     today = datetime.now()
-    three_days_ago = today - timedelta(days=7)
-    two_days_ago = today - timedelta(days=5)
+    search_window_start_date = today - timedelta(days=7)
+    search_window_end_date = today - timedelta(days=5)
 
     payload = {
-        "fromdate": int(datetime.timestamp(three_days_ago)),
-        "todate": int(datetime.timestamp(two_days_ago)),
+        "fromdate": int(datetime.timestamp(search_window_start_date)),
+        "todate": int(datetime.timestamp(search_window_end_date)),
         "sort": "votes",
         "site": "stackoverflow",
         "order": "desc",
