@@ -3,7 +3,7 @@ apache-airflow==1.10.7
 apispec==2.0.2
 appdirs==1.4.3
 attrs==19.1.0
-Babel==2.7.0
+Babel==2.9.1
 black==19.3b0
 botocore==1.12.207
 cached-property==1.5.1
