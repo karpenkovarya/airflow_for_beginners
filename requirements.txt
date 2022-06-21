@@ -47,7 +47,7 @@ MarkupSafe==1.1.1
 marshmallow==2.19.5
 marshmallow-enum==1.4.1
 marshmallow-sqlalchemy==0.17.0
-numpy==1.17.0
+numpy==1.22.0
 ordereddict==1.1
 pandas==0.25.0
 pendulum==1.4.4
